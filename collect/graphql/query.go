@@ -59,16 +59,20 @@ func QueryTraces(ctx context.Context, traceIDs []string) <-chan api.Trace {
 }
 
 func QueryTraceIDs(ctx context.Context, startTime time.Time, endTime time.Time, queryState api.TraceState) []string {
+	log.Printf("[INFO] query traceIDs from %q to %q", startTime, endTime)
+
 	interval := 30 * time.Minute
-	itv := interval
 	pageNum := 1
+	traceCnt := 0
 	needTotal := true
 
 	traceIDs := []string{}
 
 	for startTime.Before(endTime) && startTime.Before(time.Now()) {
 		start := startTime.Format(swTimeLayout)
-		end := startTime.Add(itv).Format(swTimeLayout)
+		end := startTime.Add(interval).Format(swTimeLayout)
+
+		log.Printf("[INFO] get traceIDs from %q to %q, pageNum %d, received %d", start, end, pageNum, traceCnt)
 
 		condition := &api.TraceQueryCondition{
 			QueryDuration: &api.Duration{
@@ -80,21 +84,15 @@ func QueryTraceIDs(ctx context.Context, startTime time.Time, endTime time.Time, 
 			QueryOrder: api.QueryOrderByDuration,
 			Paging: &api.Pagination{
 				PageNum:   &pageNum,
-				PageSize:  10000,
+				PageSize:  25,
 				NeedTotal: &needTotal,
 			},
 		}
 
 		traceBrief, err := QueryBasicTraces(ctx, condition)
 		if err != nil {
-			itv /= 2
-			log.Printf("[INFO] get traceID faild, try to use interval of %vs", itv.Seconds())
-			if itv <= 0 {
-				log.Printf("[ERROR] query trace id faild: %s", err)
-				itv = 1 * time.Minute
-				startTime = startTime.Add(itv)
-			}
-			continue
+			log.Printf("[ERROR] query traceIDs error: %s", err)
+			return traceIDs
 		}
 
 		if traceBrief.Total > 0 {
@@ -105,11 +103,15 @@ func QueryTraceIDs(ctx context.Context, startTime time.Time, endTime time.Time, 
 			traceIDs = append(traceIDs, trace.TraceIds...)
 		}
 
-		startTime = startTime.Add(itv)
-
-		if itv < interval {
-			itv *= 2
+		traceCnt += len(traceBrief.Traces)
+		if traceCnt < traceBrief.Total {
+			pageNum++
+			continue
 		}
+
+		pageNum = 1
+		traceCnt = 0
+		startTime = startTime.Add(interval)
 	}
 
 	return traceIDs

@@ -25,7 +25,7 @@ var (
 )
 
 const (
-	swTimeLayout = "2006-01-02"
+	swTimeLayout = "2006-01-02 150405"
 )
 
 type Config struct {
